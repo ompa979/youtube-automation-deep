@@ -1,8 +1,94 @@
 name: Generate YouTube Short
 
 on:
-  schedule:
-    - cron: '17 * * * *'
   workflow_dispatch:
     inputs:
-      dry
+      dry_run:
+        description: Dry run (no upload)
+        type: boolean
+        default: false
+  schedule:
+    - cron: '17 * * * *'
+
+permissions:
+  contents: write
+  packages: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Start TTS sidecar
+        run: |
+          if docker pull ghcr.io/${{ github.repository }}/chatterbox-tts:latest 2>/dev/null; then
+            docker run -d --name chatterbox -p 8000:8000 -e TTS_SERVER_TOKEN="${{ secrets.TTS_SERVER_TOKEN }}" ghcr.io/${{ github.repository }}/chatterbox-tts:latest
+            echo "TTS_SERVER_URL=http://localhost:8000" >> $GITHUB_ENV
+          fi
+
+      - name: Wait for TTS
+        if: env.TTS_SERVER_URL != ''
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8000/health >/dev/null 2>&1; then
+              echo "ready"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "TTS_SERVER_URL=" >> $GITHUB_ENV
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ffmpeg fonts-inter
+          pip install -r requirements.txt
+
+      - name: Generate
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          TTS_SERVER_TOKEN: ${{ secrets.TTS_SERVER_TOKEN }}
+          MANIM_ENABLED: '1'
+          NICHES_ENABLED: 'upsc_polity,ssc_math,general_science'
+          LANGUAGES_ENABLED: 'hinglish,hi,en'
+          YT_CREDS_1: ${{ secrets.YT_CREDS_1 }}
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            python -m pipeline.generate --dry-run
+          else
+            python -m pipeline.generate
+          fi
+
+      - name: Stop TTS
+        if: always()
+        run: docker stop chatterbox || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: video-${{ github.run_number }}
+          path: out/*.mp4
+          if-no-files-found: ignore
+
+      - name: Save state
+        if: always()
+        run: |
+          git config user.name bot
+          git config user.email bot@users.noreply.github.com
+          git add content_plan.json .quota_state.json 2>/dev/null || true
+          git diff --cached --quiet && exit 0
+          git commit -m "update state [skip ci]"
+          git push
