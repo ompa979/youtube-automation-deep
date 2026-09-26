@@ -2,9 +2,6 @@ name: Build TTS Docker Image
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 permissions:
   contents: read
@@ -26,6 +23,6 @@ jobs:
 
       - uses: docker/build-push-action@v6
         with:
-          context: ./tts-server
+          context: ./container
           push: true
           tags: ghcr.io/${{ github.repository }}/chatterbox-tts:latest

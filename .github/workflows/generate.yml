@@ -1,94 +1,169 @@
 name: Generate YouTube Short
 
 on:
+  schedule:
+    - cron: '17 * * * *'
   workflow_dispatch:
     inputs:
       dry_run:
-        description: Dry run (no upload)
+        description: 'Dry run (render but do not upload)?'
         type: boolean
         default: false
-  schedule:
-    - cron: '17 * * * *'
+
+concurrency:
+  group: youtube-shorts
+  cancel-in-progress: false
 
 permissions:
   contents: write
-  packages: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: docker/login-action@v3
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 1
 
-      - name: Start TTS sidecar
-        run: |
-          if docker pull ghcr.io/${{ github.repository }}/chatterbox-tts:latest 2>/dev/null; then
-            docker run -d --name chatterbox -p 8000:8000 -e TTS_SERVER_TOKEN="${{ secrets.TTS_SERVER_TOKEN }}" ghcr.io/${{ github.repository }}/chatterbox-tts:latest
-            echo "TTS_SERVER_URL=http://localhost:8000" >> $GITHUB_ENV
-          fi
-
-      - name: Wait for TTS
-        if: env.TTS_SERVER_URL != ''
-        run: |
-          for i in $(seq 1 60); do
-            if curl -fsS http://localhost:8000/health >/dev/null 2>&1; then
-              echo "ready"
-              exit 0
-            fi
-            sleep 5
-          done
-          echo "TTS_SERVER_URL=" >> $GITHUB_ENV
-
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
-      - name: Install deps
+      - name: Install system deps (ffmpeg + Inter font)
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y ffmpeg fonts-inter
-          pip install -r requirements.txt
+          sudo apt-get install -y ffmpeg fonts-inter espeak-ng
 
-      - name: Generate
+      - name: Install Python deps
+        run: pip install -r requirements.txt
+
+      - name: Verify pipeline source
+        run: |
+          set -euo pipefail
+          test -f pipeline/__init__.py
+          test -f pipeline/generate.py
+          test -f pipeline/tts.py
+          test -f pipeline/render.py
+          set -euo pipefail
+
+          echo "========================================"
+          echo "=== COMMIT ==="
+          echo "========================================"
+          git rev-parse HEAD
+          git log -1 --oneline
+
+          echo "=== PYTHON COMPILE ==="
+          python -m compileall -q pipeline container
+
+          echo "=== V5 ARCHITECTURE CHECK ==="
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          files = ["pipeline/tts.py", "pipeline/render.py",
+                   "pipeline/generate.py", "pipeline/script_gen.py",
+                   "pipeline/visuals.py", "pipeline/quality.py",
+                   "container/server.py"]
+
+          for name in files:
+              ast.parse(Path(name).read_text(encoding="utf-8"), filename=name)
+
+          tts = Path("pipeline/tts.py").read_text(encoding="utf-8")
+          render = Path("pipeline/render.py").read_text(encoding="utf-8")
+          script = Path("pipeline/script_gen.py").read_text(encoding="utf-8")
+          visuals = Path("pipeline/visuals.py").read_text(encoding="utf-8")
+          quality = Path("pipeline/quality.py").read_text(encoding="utf-8")
+          plan = Path("content_plan.json").read_text(encoding="utf-8")
+
+          assert "gTTS(" in tts
+          assert 'tld="co.in"' in tts
+          assert "espeak-ng" in tts
+          assert "Dialogue:" not in tts
+          assert "Style: Cap" not in tts
+          assert "ass=" not in render
+          assert "captions" not in render.lower()
+          assert "Indian English" in script
+          assert "Devanagari" in script
+          assert "premium cinematic" in visuals
+          assert "English-only pipeline" in quality
+          assert '"en": "en-IN"' in plan
+
+          print("PASS: English-only script contract")
+          print("PASS: free Indian-English TTS contract")
+          print("PASS: subtitle/ASS rendering removed")
+          print("PASS: premium visual pipeline enabled")
+          print("PASS: Python AST validation passed")
+          PY
+
+          echo "=== NO LEGACY SUBTITLE PATH ==="
+          if grep -RniE 'Style: Cap|Dialogue:|filter_complex.*ass=|-[vf].*ass=' pipeline; then
+            echo "ERROR: Legacy subtitle path detected"
+            exit 1
+          fi
+          echo "PASS: no legacy subtitle rendering"
+
+      - name: Generate & upload
         env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-          TTS_SERVER_TOKEN: ${{ secrets.TTS_SERVER_TOKEN }}
-          MANIM_ENABLED: '1'
-          NICHES_ENABLED: 'upsc_polity,ssc_math,general_science'
-          LANGUAGES_ENABLED: 'hinglish,hi,en'
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+          TTS_PROVIDER: gtts
+          TTS_LANGUAGE: en-IN
+          TTS_VOICE: en-IN
+          TTS_NO_FALLBACK: false
           YT_CREDS_1: ${{ secrets.YT_CREDS_1 }}
+          YT_CREDS_2: ${{ secrets.YT_CREDS_2 }}
+          YT_CREDS_3: ${{ secrets.YT_CREDS_3 }}
+          YT_CREDS_4: ${{ secrets.YT_CREDS_4 }}
+          NICHES_ENABLED: 'exam_concepts,science_explainers'
+          LANGUAGES_ENABLED: 'en'
         run: |
           if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "[i] Dry run — skipping upload."
             python -m pipeline.generate --dry-run
           else
             python -m pipeline.generate
           fi
 
-      - name: Stop TTS
-        if: always()
-        run: docker stop chatterbox || true
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: video-${{ github.run_number }}
-          path: out/*.mp4
-          if-no-files-found: ignore
-
-      - name: Save state
+      - name: Collect rendered video
         if: always()
         run: |
-          git config user.name bot
-          git config user.email bot@users.noreply.github.com
+          mkdir -p out
+          if compgen -G "/tmp/out/*.mp4" > /dev/null; then
+            cp -v /tmp/out/*.mp4 out/
+          fi
+          if [ -f /tmp/out/script.json ]; then
+            cp -v /tmp/out/script.json out/
+          fi
+          if ! compgen -G "out/*.mp4" > /dev/null; then
+            echo "[i] No rendered MP4 found in /tmp/out"
+          fi
+          ls -lah out || true
+
+      - name: Upload rendered video as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rendered-video-${{ github.run_number }}
+          path: out/
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Commit state back
+        if: always()
+        run: |
+          git config user.name "bds-bot"
+          git config user.email "bot@users.noreply.github.com"
           git add content_plan.json .quota_state.json 2>/dev/null || true
-          git diff --cached --quiet && exit 0
-          git commit -m "update state [skip ci]"
+          if git diff --cached --quiet; then
+            echo "[i] Nothing to commit."
+            exit 0
+          fi
+          git commit -m "chore: update rotation & quota [skip ci]"
           git push

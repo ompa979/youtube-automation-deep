@@ -1,187 +1,244 @@
-# Hinglish Exam-Prep YouTube Shorts Pipeline
+# Cloudflare-Native YouTube Shorts Pipeline
 
-Zero-cost, fully automated pipeline producing 10-15 educational Shorts per day in natural Hinglish, with dynamic, learning-oriented visuals generated per topic.
+Fully automated 9:16 Shorts generator + uploader running entirely on **Cloudflare Workers**. Cron Triggers fire hourly, a Queue decouples the work, a Durable Object tracks state, a Container runs FFmpeg + Python, and R2 stores the output.
 
-**Script generation: OpenRouter primary, Gemini fallback.**
-**TTS: self-hosted Chatterbox on GitHub Actions (no external server).**
-**Everything runs on GitHub Actions free tier. No card required.**
+Pipeline: **Topic → OpenRouter → natural Hinglish QA → Hindi-friendly TTS → educational visuals → FFmpeg → R2 → YouTube API.**
 
-## Create a New Repo — Step-by-Step
+---
 
-### Prerequisites
+## ⚡ Quick Start
 
-- GitHub account
-- OpenRouter account (free): https://openrouter.ai
-- Google AI Studio account (free): https://aistudio.google.com
-- Pexels account (free): https://www.pexels.com/api/
-- Google Cloud project with YouTube Data API v3 enabled
+```bash
+# 1. Install dependencies
+npm install
 
-### Step 1: Get your OpenRouter API key
+# 2. Log in to Cloudflare
+npx wrangler login
 
-1. Go to https
+# 3. Create the R2 bucket and upload the content plan
+npx wrangler r2 bucket create youtube-shorts-output
+npx wrangler r2 object put youtube-shorts-output/content_plan.json --file=content_plan.json
+
+# 4. Create the queues
+npx wrangler queues create youtube-shorts-queue
+npx wrangler queues create youtube-shorts-dlq
+
+# 5. Set secrets
+npx wrangler secret put GEMINI_API_KEY
+npx wrangler secret put PEXELS_API_KEY
+npx wrangler secret put YT_CREDS_1
+
+# 6. Deploy
+npx wrangler deploy
+
+# 7. Test manually
+curl -X POST https://cf-youtube-pipeline.<your-subdomain>.workers.dev/trigger
 ```
 
-**Option B — via the GitHub website:**
+---
 
-1. Go to https://github.com/new
-2. **Repository name:** `youtube-automation`
-3. Set visibility to **Public** (critical — Actions minutes are unlimited on public repos)
-4. Do NOT check any initialization boxes
-5. Click **Create repository**
-6. In your terminal:
+## 🧠 Natural Hinglish V3
 
-```
-cd /path/where/you/want/the/project
-git clone https://github.com/YOUR_USERNAME/youtube-automation.git
-cd youtube-automation
-```
+The current pipeline is content-first: there is **no fixed 30/40/60-second script target**. The concept determines the runtime. Viewer-facing captions use Roman Hinglish while `tts_text` can use Devanagari for Hindi pronunciation. MCQs and CTAs are optional, and visual prompts are educational rather than decorative.
 
-### Step 3: Add all the project files
+LLM order: **OpenRouter primary → Gemini fallback → one QA/repair pass**.
 
-Copy every file from this project into the cloned repo folder. The structure should look like this:
+TTS order: **Edge MadhurNeural → Edge SwaraNeural → gTTS Hindi → eSpeak Hindi**. No Google Cloud TTS billing or credentials are used.
 
-```
-youtube-automation/
-├── .github/workflows/
-│   ├── build-tts.yml
-│   └── generate.yml
-├── assets/music/.gitkeep
-├── pipeline/
-│   ├── __init__.py
-│   ├── config.py
-│   ├── script_gen.py
-│   ├── tts.py
-│   ├── visuals.py
-│   ├── gemini_images.py
-│   ├── manim_renderer.py
-│   ├── render.py
-│   ├── quota.py
-│   ├── upload.py
-│   └── generate.py
-├── scripts/
-│   ├── setup_oauth.py
-│   └── encode_creds.py
-├── tts-server/
-│   ├── Dockerfile
-│   ├── server.py
-│   ├── requirements.txt
-│   ├── docker-compose.yml
-│   └── references/
-│       ├── .gitkeep
-│       └── README.md
-├── .env.example
-├── .gitignore
-├── content_plan.json
-├── requirements.txt
-└── README.md
-```
+See `NATURAL_HINGLISH_V3.md` for the design specification.
 
-Then push:
+---
 
-```
-git add .
-git commit -m "Initial commit"
-git push -u origin main
-```
+## 🔑 Free API Keys You Need
 
-### Step 4: Build the Chatterbox TTS Docker image (one time)
-
-1. Go to your repo → **Actions** tab
-2. If prompted, click **"I understand my workflows, go ahead and enable them"**
-3. In the left sidebar, click **Build TTS Docker Image**
-4. Click **Run workflow** → leave branch as `main` → **Run workflow**
-5. Wait 20-40 minutes. When it succeeds, the image is live at
-`ghcr.io/YOUR_USERNAME/youtube-automation/chatterbox-tts:latest`
-
-### Step 5: Add GitHub Secrets
-
-Repo → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**.
-
-| Name ↕▾ | Value ↕▾ |
-|---|---|
-| −`OPENROUTER_API_KEY` | `sk-or-v1-...` |
-| −`GEMINI_API_KEY` | AIza... |
-| −`PEXELS_API_KEY` | from Pexels |
-| −`TTS_SERVER_TOKEN` | `openssl rand -hex 32` |
-| −`YT_CREDS_1` | from the OAuth script (Step 7) |
+| Key ↕▾ | Where to get it ↕▾ | Cost ↕▾ |
+|---|---|---|
+| −`GEMINI_API_KEY` | https://aistudio.google.com/apikey | Free tier |
+| −`PEXELS_API_KEY` | https://www.pexels.com/api/ | Free |
+| −`OPENROUTER_API_KEY` *(primary script generator)* | https://openrouter.ai/keys | Free |
+| −`PIXABAY_API_KEY` *(optional, for music)* | https://pixabay.com/api/docs/ | Free |
+| −`YT_CREDS_N` | Generated by `scripts/setup_oauth.py` | Free |
 ⚙
 
-### Step 6: Add GitHub Variables
+**Edge-TTS** and **Pollinations (image gen)** require **no key at all**. TTS uses free Hindi voices with automatic gTTS/eSpeak fallbacks.
 
-Same page → switch to **Variables** tab → **New repository variable**.
+---
 
-| Name ↕▾ | Value ↕▾ |
-|---|---|
-| −`MANIM_ENABLED` | `1` |
-| −`NICHES_ENABLED` | `upsc_polity,ssc_math,general_science` |
-| −`LANGUAGES_ENABLED` | `hinglish,hi,en` |
-| −`GEMINI_IMAGE_MODEL` | `gemini-3.1-flash-image` |
+## 🎬 YouTube Upload Quota
+
+YouTube Data API v3 gives you **10,000 units/day** per Google Cloud project.
+One upload costs **1,600 units** → **6 uploads/day per project**.
+
+To hit **24 uploads/day** (every hour), you need **4 Google Cloud projects**.
+
+```
+1 project   →  6 uploads/day
+2 projects  → 12 uploads/day
+4 projects  → 24 uploads/day   ← hourly
+6 projects  → 36 uploads/day   ← headroom
+```
+
+For each project:
+
+1. Create a new project at https://console.cloud.google.com/
+2. Enable **YouTube Data API v3**
+3. OAuth consent screen → External → add yourself as a test user
+4. Credentials → OAuth client ID → **Desktop app** → download `client_secrets.json`
+5. `python scripts/setup_oauth.py client_secrets.json`
+6. Copy the base64 blob into `wrangler secret put YT_CREDS_1`
+
+The Durable Object auto-rotates: it picks the first project that still has quota left today.
+
+---
+
+## 🧩 Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Cloudflare Worker (src/index.ts)                               │
+│                                                                 │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────────┐  │
+│  │ Cron Trigger │───▶│   Queue      │───▶│ Queue Consumer   │  │
+│  │  (hourly)    │    │  (decouple)  │    │ (runs container) │  │
+│  └──────────────┘    └──────────────┘    └────────┬─────────┘  │
+│                                                    │            │
+│  ┌─────────────────────────────────────────────────▼─────────┐  │
+│  │  Durable Object (PipelineState)                           │  │
+│  │  • Topic rotation (niche + language)                      │  │
+│  │  • YouTube quota tracking per project                     │  │
+│  │  • Job status log                                         │  │
+│  └───────────────────────────────────────────────────────────┘  │
+│                                                                 │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │  Container (VideoPipelineContainer)                       │  │
+│  │  • Python + FFmpeg + Edge-TTS + Pollinations              │  │
+│  │  • Runs pipeline/generate.py                              │  │
+│  │  • Returns base64-encoded MP4                             │  │
+│  └───────────────────────────────────────────────────────────┘  │
+│                                                                 │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │  R2 Bucket (VIDEO_BUCKET)                                 │  │
+│  │  • Stores finished videos                                 │  │
+│  │  • Stores content_plan.json                               │  │
+│  └───────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 💰 Cost Breakdown
+
+| Component ↕▾ | Free Tier ↕▾ | Your Usage (hourly) ↕▾ | Monthly Cost ↕▾ |
+|---|---|---|---|
+| −**Workers Paid** | — | — | **$5.00** (required for Containers) |
+| −Workers requests | 10M/month included | ~7,200 requests (24/day × 30) | $0 |
+| −Cron Triggers | Included with Paid | 720 triggers | $0 |
+| −Queues | 10,000 ops/day | ~72 ops/day | $0 |
+| −R2 storage | 10 GB free | ~15 GB for ~500 videos | $0 (first 10 GB) |
+| −R2 operations | 1M Class A, 10M Class B | Negligible | $0 |
+| −Durable Objects | Included with Paid | 1 instance | $0 |
+| −Container CPU | 375 vCPU-min included | ~2 vCPU-min/day | $0 |
+| −Container memory | 25 GiB-h included | ~0.5 GiB-h/day | $0 |
 ⚙
 
-### Step 7: Generate YouTube OAuth credentials
+**Total: ~$5/month.** The Workers Paid plan is required for Containers and reliable Cron Triggers. Everything else fits comfortably within the free tiers.
+
+---
+
+## ✏️ Customising Content
+
+All topics and voice settings live in **`content_plan.json`** (stored in R2).
 
 ```
-python -m venv .venv
-source .venv/bin/activate    # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-python scripts/setup_oauth.py /path/to/client_secrets.json
+"facts": {
+  "video_length_sec": 40,
+  "visual_style": "text_gradient_ai",   // or: mixed_stock_ai | ai_cinematic
+  "voice": {
+    "en":       "en-US-GuyNeural",
+    "hi":       "hi-IN-MadhurNeural",
+    "hinglish": "en-IN-PrabhatNeural"
+  },
+  "topics": [
+    "octopus has three hearts",
+    "sharks existed before trees",
+    ...
+  ]
+}
 ```
 
-Sign in with the YouTube channel. Copy the base64 string into `YT_CREDS_1` in GitHub Secrets.
+To update topics, edit the file locally and re-upload:
 
-### Step 8: Dry run
+```
+npx wrangler r2 object put youtube-shorts-output/content_plan.json --file=content_plan.json
+```
 
-Actions → **Generate YouTube Short** → Run workflow → check **dry_run** → Run. Download the artifact and inspect it.
+### Browse all available voices
 
-### Step 9: Go live
+```
+edge-tts --list-voices | grep -E 'en-|hi-'
+```
 
-Run again with **dry_run unchecked**. The cron (`17 * * * *`) takes over.
+---
 
-## How Script Generation Works
+## 🎛️ Environment Toggles
 
-OpenRouter models tried in order:
+Edit `wrangler.toml` → `[vars]`:
 
-1. `deepseek/deepseek-chat-v3.1:free` — best JSON adherence
-2. `meta-llama/llama-3.3-70b-instruct:free`
-3. `google/gemini-2.0-flash-exp:free`
-
-Override via GitHub Variable `OPENROUTER_MODELS` (comma-separated). Gemini 2.5 Flash is used **only** if all OpenRouter models fail.
-
-## Cost Breakdown
-
-| Component ↕▾ | Cost ↕▾ |
-|---|---|
-| −GitHub Actions (public repo) | ₹0 — unlimited |
-| −GitHub Container Registry | ₹0 — unlimited |
-| −OpenRouter free models | ₹0 (50 req/day) or one-time $10 for 1,000 req/day |
-| −Chatterbox TTS (MIT) | ₹0 |
-| −Manim (MIT) | ₹0 |
-| −Gemini image generation | ₹0 (verify free tier) |
-| −Pexels API | ₹0 |
-| −YouTube Data API | ₹0 |
+| Var ↕▾ | Values ↕▾ | Effect ↕▾ |
+|---|---|---|
+| −`UPLOAD_ENABLED` | `0` / `1` | Disable upload to test rendering |
+| −`NICHES_ENABLED` | `facts,explainers,stories` | Which niches are active |
+| −`LANGUAGES_ENABLED` | `en,hi,hinglish` | Which languages rotate |
 ⚙
 
-**Total: ₹0/month + optional one-time $10 OpenRouter credit.**
+---
 
-## File Map
+## 🔧 Useful Commands
 
 ```
-pipeline/
-├── config.py           # env loading
-├── script_gen.py       # OpenRouter primary, Gemini fallback
-├── tts.py              # Chatterbox client + Edge-TTS fallback
-├── visuals.py          # scene router
-├── gemini_images.py    # Gemini image client
-├── manim_renderer.py   # Manim wrapper
-├── render.py           # FFmpeg assembly
-├── quota.py            # YouTube quota tracking
-├── upload.py           # YouTube upload
-└── generate.py         # orchestrator
+# Local development (runs the Worker in Miniflare)
+npx wrangler dev
 
-tts
+# Trigger a manual job locally
+curl -X POST http://localhost:8787/trigger
+
+# View live logs
+npx wrangler tail
+
+# Check job stats
+curl https://cf-youtube-pipeline.<subdomain>.workers.dev/stats
+
+# Rebuild and deploy the container
+npx wrangler containers build ./container
+npx wrangler deploy
+
+# List container instances
+npx wrangler containers list
 ```
 
-## License
+---
 
-MIT
+## ⚠️ Risks & Mitigations
 
+| Risk ↕▾ | Mitigation ↕▾ |
+|---|---|
+| −**YouTube flags spam** | Don't upload 24/day from one channel. Use 2–3 channels, 8–12/day each. Add variation in titles/tags. |
+| −**Pollinations rate-limits** | Rotate to Cloudflare Workers AI or Hugging Face on failure. |
+| −**Cron delay** | Cloudflare Cron Triggers are reliable, but add a catch-up mechanism if needed. |
+| −**OAuth token expiry** | YouTube refresh tokens don't expire unless revoked. Re-run `setup_oauth.py` if one dies. |
+| −**Content policy strikes** | Avoid medical/financial claims, violence, or copyrighted music. Use original or royalty-free audio. |
+| −**Container cold start** | The container sleeps after 10 min of inactivity. Cold start adds ~30–60 s to the first job after a gap. Acceptable for hourly cadence. |
+| −**LLM hallucination** | Spot-check the first 20 videos. Tighten the system prompt in `content_plan.json` if needed. |
+⚙
+
+---
+
+## 📜 License
+
+MIT — do whatever you want, but you're responsible for the content you publish.
+
+
+
+## Free Hindi/Hinglish TTS
+
+Default: Edge TTS with `hi-IN-SwaraNeural`, then `hi-IN-MadhurNeural`, then gTTS Hindi, then eSpeak Hindi. Configure `TTS_PROVIDER`, `TTS_LANGUAGE`, and `TTS_VOICE`; no Google Cloud billing or credentials are required.

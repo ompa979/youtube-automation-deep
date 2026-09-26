@@ -1,0 +1,79 @@
+name = "cf-youtube-pipeline"
+main = "src/index.ts"
+compatibility_date = "2025-10-11"
+compatibility_flags = ["nodejs_compat"]
+
+# ─── Cron Triggers ────────────────────────────────────────────────────────────
+# Fires every hour at :17 UTC. Cloudflare Cron Triggers are reliable and
+# available on the Workers Paid plan. The :17 offset avoids the global
+# top-of-hour congestion that can delay scheduled jobs.
+[triggers]
+crons = ["17 * * * *"]
+
+# ─── Containers ───────────────────────────────────────────────────────────────
+# The Python pipeline runs inside a Docker container. Cloudflare Containers
+# scale to zero between jobs — at one video per hour, the container is idle
+# ~95% of the time and you only pay for active CPU/memory/disk usage.
+[[containers]]
+class_name = "VideoPipelineContainer"
+image = "./container/Dockerfile"
+instance_type = "standard-2"   # 1 vCPU, 6 GiB RAM, 12 GB disk — enough for FFmpeg
+max_instances = 1               # sequential processing keeps costs predictable
+sleep_after = "10m"             # shutdown after 10 minutes of inactivity
+
+# ─── Durable Objects ──────────────────────────────────────────────────────────
+# One DO instance acts as the job coordinator: it tracks topic rotation,
+# YouTube quota state, and job status. SQLite-backed for durability.
+[[durable_objects.bindings]]
+class_name = "VideoPipelineContainer"
+name = "PIPELINE_CONTAINER"
+
+[[durable_objects.bindings]]
+class_name = "PipelineState"
+name = "PIPELINE_STATE"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["VideoPipelineContainer", "PipelineState"]
+
+# ─── Queues ───────────────────────────────────────────────────────────────────
+# Decouples the cron trigger from the actual work. If the container is cold
+# or fails, the message retries automatically. Free tier: 10,000 ops/day.
+[[queues.producers]]
+queue = "youtube-shorts-queue"
+binding = "SHORTS_QUEUE"
+
+[[queues.consumers]]
+queue = "youtube-shorts-queue"
+max_batch_size = 1              # process one video at a time
+max_batch_timeout = 30
+max_retries = 3
+dead_letter_queue = "youtube-shorts-dlq"
+
+[[queues.producers]]
+queue = "youtube-shorts-dlq"
+binding = "SHORTS_DLQ"
+
+# ─── R2 ───────────────────────────────────────────────────────────────────────
+# Finished videos and intermediate images are stored in R2. 10 GB free,
+# zero egress fees. A 40-second Short is roughly 15–30 MB.
+[[r2_buckets]]
+binding = "VIDEO_BUCKET"
+bucket_name = "youtube-shorts-output"
+
+# ─── Environment Variables ────────────────────────────────────────────────────
+[vars]
+# Set to "0" to render only (dry run).
+UPLOAD_ENABLED = "1"
+# Comma-separated niches to enable: facts,explainers,stories
+NICHES_ENABLED = "exam_concepts,science_explainers"
+# Comma-separated languages: en,hi,hinglish
+LANGUAGES_ENABLED = "hinglish"
+
+# ─── Secrets (set via `wrangler secret put`) ──────────────────────────────────
+# GEMINI_API_KEY
+# OPENROUTER_API_KEY
+# TTS_PROVIDER / TTS_LANGUAGE / TTS_VOICE are configured by the Worker.
+# PEXELS_API_KEY
+# PIXABAY_API_KEY
+# YT_CREDS_1 … YT_CREDS_6

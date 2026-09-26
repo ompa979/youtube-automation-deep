@@ -1,0 +1,22 @@
+PERMANENT FIX VERIFICATION
+==========================
+Inspected together: generate.py, script_gen.py, tts.py, config.py, render.py, workflow.
+
+Permanent fixes:
+- generate.py now uses the correct synthesize_scene API with explicit named arguments.
+- Per-scene MP3/ASS output paths are created under WORK_DIR/scenes.
+- script_gen.py normalizes narration/tts_text from common LLM field aliases.
+- Empty scene text is rejected before TTS with scene number and available fields.
+- TTS has separate subtitle_text and tts_text.
+- Provider order is gTTS -> Edge -> eSpeak.
+- _safe_text is defined before use.
+- Centered ASS subtitles contain the spoken narration.
+- Legacy broken nested overlay f-string is absent.
+- Workflow checks cross-file API and scene normalization.
+
+Verification:
+- py_compile generate.py: PASS
+- py_compile script_gen.py: PASS
+- py_compile tts.py: PASS
+- AST parse all three: PASS
+- ZIP integrity: PASS

@@ -1,9 +1,56 @@
 {
   "version": 3,
-  "last_updated": "2026-09-26T00:00:00Z",
-  "rotation": {
-    "last_niche": null,
-    "last_language": null,
-    "uploaded_count": 0
-  },
- 
+  "last_updated": "2026-09-26T11:20:00Z",
+  "niches": {
+    "exam_concepts": {
+      "display_name": "Exam Concepts",
+      "visual_style": "educational_ai",
+      "voice": {
+        "en": "en-IN"
+      },
+      "system_prompt": "Create genuinely useful educational content for Indian competitive-exam aspirants. Focus on one coherent concept from UPSC, SSC, Banking, Railway, RBI, SEBI, NABARD or similar exams. Difficult older concepts are welcome. Explain the reasoning clearly and avoid generic motivational filler. Prefer a natural teacher-student feel over a viral-template feel. Write exclusively in clear conversational Indian English. No Hinglish or Hindi.",
+      "topics": [
+        "why the sky is blue and what Rayleigh scattering actually means",
+        "Fundamental Rights versus Directive Principles and the enforceability difference",
+        "why inflation can rise even when a person feels prices of some goods are falling",
+        "how repo rate changes can influence borrowing and demand",
+        "why monsoon winds reverse direction in the Indian subcontinent",
+        "difference between weather and climate with a concrete Indian example",
+        "why a weak acid can have a strong conjugate base and how to reason about it",
+        "how opportunity cost differs from explicit money cost",
+        "why parliamentary government has collective responsibility",
+        "difference between fiscal deficit and primary deficit",
+        "why a metal spoon feels colder than a wooden spoon in the same room",
+        "why octopus blood is blue and why it has three hearts",
+        "why antibiotic resistance is natural selection rather than the body becoming immune",
+        "how GPS determines position using multiple satellites",
+        "why pressure decreases with altitude and what that means for boiling point",
+        "how a balance of payments differs from a trade balance",
+        "why fundamental frequency and resonance are not the same thing",
+        "how El Nino can affect Indian monsoon variability",
+        "why the Constitution uses both Fundamental Rights and Directive Principles",
+        "how compound interest differs from simple interest using a small numerical example"
+      ]
+    },
+    "science_explainers": {
+      "display_name": "Science Explained",
+      "visual_style": "educational_ai",
+      "voice": {
+        "en": "en-IN"
+      },
+      "system_prompt": "Explain one science or technology concept accurately for a serious Indian exam learner. Use a simple mental model, then give the technical explanation. Do not oversimplify into an incorrect statement. Use equations only when they materially improve understanding. Write exclusively in clear conversational Indian English. No Hinglish or Hindi.",
+      "topics": [
+        "how a transformer changes AC voltage",
+        "why satellites stay in orbit instead of falling straight down",
+        "why blue light scatters more strongly than red light",
+        "how antibodies recognize antigens",
+        "why increasing temperature can speed up a chemical reaction",
+        "what activation energy means in a real reaction",
+        "how semiconductors differ from conductors and insulators",
+        "why the sky near sunset appears red or orange",
+        "how vaccines create immune memory",
+        "why the pH scale is logarithmic"
+      ]
+    }
+  }
+}

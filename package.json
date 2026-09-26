@@ -1,0 +1,22 @@
+{
+  "name": "cf-youtube-pipeline",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloudflare Workers-native YouTube Shorts automation pipeline",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "build": "wrangler deploy --dry-run",
+    "types": "wrangler types",
+    "tail": "wrangler tail",
+    "container:build": "wrangler containers build ./container"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240909.0",
+    "typescript": "^5.5.0",
+    "wrangler": "^4.0.0"
+  },
+  "dependencies": {
+    "@cloudflare/containers": "^0.1.0"
+  }
+}

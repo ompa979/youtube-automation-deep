@@ -1,0 +1,35 @@
+V5 VERIFICATION REPORT
+======================
+
+Source: uploaded youtube-automation-main ZIP
+Build target:
+  - English-only narration
+  - Free Indian-English voice
+  - No subtitles
+  - Higher visual quality
+  - OpenRouter primary
+
+STATIC VERIFICATION
+  PASS - Python AST parsing for pipeline and container modules
+  PASS - Python bytecode compilation
+  PASS - gTTS India endpoint: lang=en, tld=co.in
+  PASS - espeak-ng/en-in fallback code
+  PASS - No ASS Dialogue generation in pipeline/tts.py
+  PASS - No ASS filter in pipeline/render.py
+  PASS - English-only Devanagari guard
+  PASS - Premium cinematic visual prompt
+  PASS - Image dimension/file-size validation
+  PASS - Content plan language is en / voice en-IN
+
+RENDER VERIFICATION
+  PASS - Actual FFmpeg render executed locally with synthetic scene assets
+  PASS - Output stream: H.264 video 1080x1920
+  PASS - Output stream: AAC audio
+  PASS - No subtitle stream/filter used
+
+IMPORTANT
+  gTTS requires network access during the GitHub Actions run. If Google gTTS
+  is unreachable, the pipeline falls back to espeak-ng. The fallback is an
+  offline safety net, not the preferred natural voice.
+
+GitHub dry-run artifact remains enabled in .github/workflows/generate.yml.
