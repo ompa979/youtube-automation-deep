@@ -1,0 +1,28 @@
+# Secrets
+.env
+credentials/
+*.json.bak
+client_secrets*.json
+token*.json
+
+# Runtime artefacts
+work/
+out/
+*.mp4
+*.mp3
+*.ass
+*.wav
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Node (for any TS tooling)
+node_modules/
+.wrangler/
+
+# OS
+.DS_Store
+Thumbs.db
